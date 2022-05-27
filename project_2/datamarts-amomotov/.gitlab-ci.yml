@@ -1,0 +1,40 @@
+variables:
+  SBT_OPTS: "-Dhttp.proxyHost=${PROXY_HOST} -Dhttp.proxyPort=${PROXY_PORT} -Dhttps.proxyHost=${PROXY_HOST} -Dhttps.proxyPort=${PROXY_PORT}"
+
+stages:
+  - build
+  - deploy
+
+sbt-build:
+  image: nexus-repo.dmp.xxx.ru/gitlab-runners/maven-deploy:release-2.0.4
+  stage: build
+  script:
+    - sbt assembly
+  artifacts:
+    paths:
+      - target/*/*.jar
+    expire_in: 1 week
+  cache:
+    paths:
+      - ~/.ivy2/
+  only:
+    refs:
+      - master
+
+put-to-hdfs:
+  image: nexus-repo.dmp.xxx.ru/gitlab-runners/hdpclient-vault:hpd31-vault160
+  dependencies:
+    - sbt-build
+  stage: deploy
+  script:
+    - export VAULT_TOKEN="$(vault write -field=token $VAULT_AUTH_TYPE role=$VAULT_ROLE jwt=$VAULT_SA_TOKEN)"
+    - export USERNAME="$(vault kv get -field=username $VAULT_PATH_AIRFLOW_TECH_USER)"
+    - export PASSWORD="$(vault kv get -field=password $VAULT_PATH_AIRFLOW_TECH_USER)"
+    - echo $PASSWORD | kinit $USERNAME
+    - hdfs dfs -mkdir -p /apps/airflow/$HDFS_TARGET_USER/$CI_PROJECT_NAME/version/latest
+    - hdfs dfs -rm -r -f -skipTrash /apps/airflow/$HDFS_TARGET_USER/$CI_PROJECT_NAME/version/latest/*
+    - hdfs dfs -put target/*/*.jar /apps/airflow/$HDFS_TARGET_USER/$CI_PROJECT_NAME/version/latest/
+    - hdfs dfs -ls /apps/airflow/$HDFS_TARGET_USER/$CI_PROJECT_NAME/version/latest/
+  only:
+    refs:
+      - master

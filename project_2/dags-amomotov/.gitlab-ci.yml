@@ -1,0 +1,14 @@
+stages:
+  - update
+
+update-submodule-commit:
+  image: nexus-repo.dmp.xxx.ru/gitlab-runners/git:gce
+  stage: update
+  script:
+    - git config --global user.email "$GITLAB_USER_EMAIL"
+    - git config --global user.name "$GITLAB_USER_EMAIL"
+    - git clone --recurse-submodules https://gitlab.prod.dmp.xxx.ru/school-de/dags-prod.git /tmp/dags-prod
+    - cd /tmp/dags-prod/ && git submodule update --remote && git add --all && git commit -m "update for $CI_PROJECT_NAME-$CI_JOB_ID" && git push -u origin master
+  only:
+    refs:
+      - master
